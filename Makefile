@@ -8,7 +8,7 @@ PKG_RELEASE:=1
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/0xACE8/tcp-brutal.git
 PKG_SOURCE_BRANCH:=v1.0.3-300Mbps
-PKG_SOURCE_VERSION:=f5e40f12efa62c929dc8bff30f4c73d3b8ed55af
+PKG_SOURCE_VERSION:=8abf1e605094e9dc12798973d65720b191243975
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_VERSION)-$(PKG_SOURCE_VERSION).tar.gz
 PKG_MIRROR_HASH:=skip
 
@@ -29,7 +29,7 @@ define KernelPackage/tcp-brutal-300Mbps
 endef
 
 define KernelPackage/tcp-brutal-300Mbps/Description
-  TCP Brutal congestion control algorithm (Custom 300Mbps Mod).
+  TCP Brutal congestion control algorithm (300Mbps Mod).
 endef
 
 define Build/Compile
