@@ -15,14 +15,14 @@ PKG_MAINTAINER:=0xACE8
 
 include $(INCLUDE_DIR)/package.mk
 
-define KernelPackage/tcp-brutal
+define KernelPackage/tcp-brutal-300Mbps
   TITLE:=TCP Brutal congestion control (300Mbps)
   SUBMENU:=Network Support
   FILES:=$(PKG_BUILD_DIR)/brutal.ko
   AUTOLOAD:=$(call AutoProbe,brutal)
 endef
 
-define KernelPackage/tcp-brutal/Description
+define KernelPackage/tcp-brutal-300Mbps/Description
   TCP Brutal congestion control algorithm (Custom 300Mbps Mod).
 endef
 
@@ -30,4 +30,4 @@ define Build/Compile
 	+$(KERNEL_MAKE) M=$(PKG_BUILD_DIR) modules
 endef
 
-$(eval $(call KernelPackage,tcp-brutal))
+$(eval $(call KernelPackage,tcp-brutal-300Mbps))
