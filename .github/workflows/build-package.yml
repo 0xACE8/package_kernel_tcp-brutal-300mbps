@@ -4,13 +4,13 @@ on:
   push:
     paths:
       - '**
-  workflow_dispatch:
-    inputs:
-      debug_enabled:
-        type: boolean
-        description: 'Run with V=s (Debug)'
-        required: false
-        default: false
+#  workflow_dispatch:
+#    inputs:
+#      debug_enabled:
+#        type: boolean
+#        description: 'Run with V=s (Debug)'
+#        required: false
+#        default: false
 
 jobs:
   build:
