@@ -1,0 +1,99 @@
+name: Build tcp-brutal-300Mbps Packages
+
+on:
+  push:
+    paths:
+      - '**
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'Run with V=s (Debug)'
+        required: false
+        default: false
+
+jobs:
+  build:
+    name: Build for ${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 1. MT798x (Filogic)
+          - arch: aarch64_mt798x
+            sdk_url: https://downloads.openwrt.org/releases/23.05.5/targets/mediatek/filogic/openwrt-sdk-23.05.5-mediatek-filogic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            target_name: mediatek-filogic
+            rust_target: aarch64-unknown-linux-musl
+            
+          # 2. x86_64
+          - arch: x86_64
+            sdk_url: https://downloads.openwrt.org/releases/23.05.5/targets/x86/64/openwrt-sdk-23.05.5-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
+            target_name: x86-64
+            rust_target: x86_64-unknown-linux-musl
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Targets
+        run: |
+          rustup target add ${{ matrix.rust_target }}
+          rustup show
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev \
+            zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3
+
+      - name: Download and Setup SDK
+        run: |
+          wget -O sdk.tar.xz "${{ matrix.sdk_url }}"
+          mkdir sdk
+          tar -xJf sdk.tar.xz -C sdk --strip-components=1
+          cd sdk
+          
+          sed -i 's/option check_signature/# option check_signature/g' feeds.conf.default
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a -p lang
+          ./scripts/feeds install -a
+
+      - name: Load Custom Packages
+        run: |
+          rsync -av --exclude='sdk' --exclude='.git' --exclude='.github' --exclude='*.md' . sdk/package/
+
+      - name: Compile Packages
+        working-directory: sdk
+        run: |
+          make defconfig
+          
+          for dir in $GITHUB_WORKSPACE/*; do
+            if [ -d "$dir" ] && [ "$(basename "$dir")" != "sdk" ] && [[ "$(basename "$dir")" != .* ]]; then
+              pkg_name=$(basename "$dir")
+              echo "::group::Compiling $pkg_name"
+              
+              if [ -f "package/$pkg_name/Makefile" ]; then
+                if [ "${{ inputs.debug_enabled }}" = "true" ]; then
+                  make package/$pkg_name/compile V=s
+                else
+                  make package/$pkg_name/compile -j$(nproc) || make package/$pkg_name/compile V=s
+                fi
+              else
+                 echo "Skipping $pkg_name (No Makefile found)"
+              fi
+              
+              echo "::endgroup::"
+            fi
+          done
+
+      - name: Organize Artifacts
+        run: |
+          mkdir -p bin-output
+          find sdk/bin -name "*.ipk" -exec cp {} bin-output/ \;
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.arch }}
+          path: bin-output/*.ipk
