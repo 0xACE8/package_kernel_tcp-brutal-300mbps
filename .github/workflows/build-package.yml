@@ -1,99 +1,85 @@
-name: Build tcp-brutal-300Mbps Packages
+name: Build mt798x IPK
 
 on:
-  push:
-    paths:
-      - '**
-#  workflow_dispatch:
-#    inputs:
-#      debug_enabled:
-#        type: boolean
-#        description: 'Run with V=s (Debug)'
-#        required: false
-#        default: false
+  workflow_dispatch:
+    inputs:
+      # 默认使用 ImmortalWrt 23.05 的 SDK，这是目前 mt798x 最主流的固件版本
+      sdk_url:
+        description: 'SDK 下载地址 (默认为 ImmortalWrt 23.05 Filogic)'
+        required: true
+        default: 'https://downloads.immortalwrt.org/releases/23.05.1/targets/mediatek/filogic/immortalwrt-sdk-23.05.1-mediatek-filogic_gcc-12.3.0_musl.Linux-x86_64.tar.xz'
 
 jobs:
   build:
-    name: Build for ${{ matrix.arch }}
+    name: Build for mt798x
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # 1. MT798x (Filogic)
-          - arch: aarch64_mt798x
-            sdk_url: https://downloads.openwrt.org/releases/23.05.5/targets/mediatek/filogic/openwrt-sdk-23.05.5-mediatek-filogic_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-            target_name: mediatek-filogic
-            rust_target: aarch64-unknown-linux-musl
-            
-          # 2. x86_64
-          - arch: x86_64
-            sdk_url: https://downloads.openwrt.org/releases/23.05.5/targets/x86/64/openwrt-sdk-23.05.5-x86-64_gcc-12.3.0_musl.Linux-x86_64.tar.xz
-            target_name: x86-64
-            rust_target: x86_64-unknown-linux-musl
-
     steps:
-      - name: Checkout Code
+      - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          path: package_src
 
-      - name: Install Rust Targets
-        run: |
-          rustup target add ${{ matrix.rust_target }}
-          rustup show
-
-      - name: Install Dependencies
+      - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libncurses5-dev libncursesw5-dev \
-            zlib1g-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3
+          sudo apt-get install -y build-essential libncurses5-dev gawk git gettext libssl-dev xsltproc rsync wget unzip python3 file
 
-      - name: Download and Setup SDK
+      - name: Download and Prepare SDK
         run: |
-          wget -O sdk.tar.xz "${{ matrix.sdk_url }}"
+          echo "正在下载 SDK..."
+          wget -O sdk.tar.xz "${{ inputs.sdk_url }}"
+          
+          echo "解压 SDK..."
           mkdir sdk
           tar -xJf sdk.tar.xz -C sdk --strip-components=1
+
+      - name: Setup Package
+        run: |
           cd sdk
           
-          sed -i 's/option check_signature/# option check_signature/g' feeds.conf.default
+          # 1. 更新 Feeds (获取内核依赖)
+          echo "更新 Feeds..."
           ./scripts/feeds update -a
-          ./scripts/feeds install -a -p lang
           ./scripts/feeds install -a
-
-      - name: Load Custom Packages
+          
+          # 2. 植入源码
+          # OpenWrt 标准路径: package/kernel/包名
+          PKG_PATH="package/kernel/tcp-brutal-300Mbps"
+          mkdir -p $PKG_PATH
+          
+          # 复制源码 (排除 .git 和 workflow 文件)
+          echo "复制源码到 SDK..."
+          rsync -av --exclude='.git' --exclude='.github' ../package_src/ $PKG_PATH/
+          
+          # 3. 修正 Makefile (如果需要)
+          # 有些 Makefile 可能依赖 INCLUDE_DIR 路径，SDK 环境下通常没问题
+          
+      - name: Compile kmod
         run: |
-          rsync -av --exclude='sdk' --exclude='.git' --exclude='.github' --exclude='*.md' . sdk/package/
-
-      - name: Compile Packages
-        working-directory: sdk
-        run: |
+          cd sdk
+          
+          # 生成基础配置
           make defconfig
           
-          for dir in $GITHUB_WORKSPACE/*; do
-            if [ -d "$dir" ] && [ "$(basename "$dir")" != "sdk" ] && [[ "$(basename "$dir")" != .* ]]; then
-              pkg_name=$(basename "$dir")
-              echo "::group::Compiling $pkg_name"
-              
-              if [ -f "package/$pkg_name/Makefile" ]; then
-                if [ "${{ inputs.debug_enabled }}" = "true" ]; then
-                  make package/$pkg_name/compile V=s
-                else
-                  make package/$pkg_name/compile -j$(nproc) || make package/$pkg_name/compile V=s
-                fi
-              else
-                 echo "Skipping $pkg_name (No Makefile found)"
-              fi
-              
-              echo "::endgroup::"
-            fi
-          done
+          # 编译指定的包
+          # V=s 显示详细日志，防止卡死不知道原因
+          echo "开始编译 kmod-tcp-brutal-300Mbps..."
+          make package/kernel/tcp-brutal-300Mbps/compile V=s -j$(nproc)
 
-      - name: Organize Artifacts
+      - name: Collect IPK
         run: |
-          mkdir -p bin-output
-          find sdk/bin -name "*.ipk" -exec cp {} bin-output/ \;
+          cd sdk
+          mkdir -p ../output
+          
+          # 查找生成的 ipk 文件
+          # 通常在 bin/targets/mediatek/filogic/packages/ 或者 bin/packages/...
+          find bin/ -name "kmod-tcp-brutal*.ipk" -exec cp {} ../output/ \;
+          
+          echo "编译完成，文件列表："
+          ls -lh ../output/
 
-      - name: Upload Artifacts
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: packages-${{ matrix.arch }}
-          path: bin-output/*.ipk
+          name: kmod-tcp-brutal-mt798x
+          path: output/*.ipk
